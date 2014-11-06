@@ -1,0 +1,9 @@
+module.exports.STX = 2;
+module.exports.ETX = 3;
+module.exports.EOT = 4;
+module.exports.ENQ = 5;
+module.exports.ACK = 6;
+module.exports.NAK = 21;
+module.exports.FS = 28;
+module.exports.US = 31;
+module.exports.SEP = 35;
