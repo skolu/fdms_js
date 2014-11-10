@@ -1,4 +1,4 @@
-function FdmsProtocol() {
+var FdmsProtocol = function () {
 }
 
 FdmsProtocol.prototype.listener = function(stream) {
