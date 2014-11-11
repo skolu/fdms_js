@@ -6,13 +6,12 @@ var fdms = require('./servers/fdms');
 
 var unix_pipe = "./fdms_server";
 
-var fdmsProtocol = new fdms.FdmsProtocol();
-
-var fdmsServer = net.createServer(fdmsProtocol.listener.bind(fdmsProtocol));
 if (fs.existsSync(unix_pipe)) {
   fs.unlinkSync(unix_pipe);
 }
 
+var fdmsSession = new fdms.FdmsSession();
+var fdmsServer = net.createServer(fdmsSession.listener.bind(fdmsSession));
 fdmsServer.listen(unix_pipe);
 
 var options = {
@@ -20,7 +19,7 @@ var options = {
   cert: fs.readFileSync('cert.pem')
 };
 
-var siteNet = new sn.SiteNetProtocol(unix_pipe);
-var server = tls.createServer(options, siteNet.listener.bind(siteNet));
-server.listen(8444);
+var siteNetConfig = new sn.SiteNetConfig(unix_pipe);
+var siteNetServer = tls.createServer(options, siteNetConfig.listener.bind(siteNetConfig));
+siteNetServer.listen(8444);
 console.log("Started");

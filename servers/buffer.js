@@ -34,6 +34,12 @@ ReusableBuffer.prototype.shift = function(offset) {
   }
 };
 
+ReusableBuffer.prototype.cut = function(offset) {
+  var buffer = this.slice(0, offset);
+  this.shift(offset);
+  return buffer;
+};
+
 ReusableBuffer.prototype.toString = function (from, to) {
   from = from || 0;
   to = to || this.size();
