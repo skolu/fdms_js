@@ -60,39 +60,6 @@ FdmsSession.prototype.parse = function (data) {
   if (data[pos] === constants.STX)
     pos += 1
 
-  var p_ch = data.toString('ascii', pos, pos + 1);
-  if (p_ch !== '*')
-    throw "Protocol flag * expected";
-
-  pos += 1
-  header.protocol_type = data.toString('ascii', pos, pos + 1);
-
-  pos += 1
-  this.terminal_id = data.toString('ascii', pos, pos + 5);
-
-  pos += 5
-    p_sep = data.index(SEP, pos, pos + 20)
-    merch_num = data[pos:p_sep].decode()
-
-    pos = p_sep + 1
-    p_sep = data.index(FS, pos, pos+5)
-    device_id = data[pos:p_sep].decode()
-
-    pos = p_sep + 1
-    wcc = data[pos:pos+1].decode()
-
-    pos += 1
-    txn_type = data[pos:pos+1].decode()
-
-    pos += 1
-    txn_code = data[pos:pos+1].decode()
-
-    pos += 1
-    p_sep = data[pos]
-    if p_sep != FS:
-        raise ValueError('Invalid transaction header')
-
-    pos += 1
 
 };
 
