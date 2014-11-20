@@ -1,6 +1,5 @@
 var net = require('net');
 var fdms = require('./fdms');
-var buf = require("./buffer");
 var EventEmitter = require("events").EventEmitter;
 
 var SiteNetConfig = function (fdms_path) {
@@ -130,20 +129,32 @@ SiteNetSession.prototype.onSiteNetPacket = function (type, packet) {
 };
 
 var SiteNetStream = function() {
-  this.buffer = new buf.ReusableBuffer();
+  this.buffer = null;
 };
 
 SiteNetStream.prototype = new EventEmitter();
 SiteNetStream.prototype.append = function (chunk) {
-  this.buffer.append(chunk);
-  while (this.buffer.size() >= 4) {
-    var length = (this.buffer.byteAt(0) << 8) + this.buffer.byteAt(1);
-    if (this.buffer.size() >= length + 4) {
-      var packet_type = this.buffer.toString(2, 4);
-      var packet_data = this.buffer.slice(4, 4 + length);
-      this.buffer.shift(4 + length);
+  var data = null;
+  if (this.buffer !== null) {
+    data = Buffer.concat([this.buffer, chunk]);
+  } else {
+    data = chunk;
+  }
+
+  var pos = 0;
+  while (pos + 4 < data.length) {
+    var length = (data[pos] << 8) + data[pos + 1];
+    if (data.length >= length + 4) {
+      var packet_type = data.toString('ascii', pos + 2, pos + 4);
+      var packet_data = data.slice(pos + 4, pos + 4 + length);
       this.emit('packet', packet_type, packet_data);
+      pos += length + 4;
     }
+  }
+  if (pos < data.length) {
+    this.buffer = data.slice(pos);
+  } else {
+    this.buffer = null;
   }
 };
 

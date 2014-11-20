@@ -1,35 +1,10 @@
+var ft = require('./fdms_types');
 var constants = require('./constants');
 var buffertools = require('buffertools');
 
-var TxnCode = Object.freeze({
-  Close: '0',
-  Sale: '1',
-  Return: '2',
-  TicketOnly: '3',
-  AuthOnly: '4',
-  VoidSale: '5',
-  VoidReturn: '6',
-  VoidTicketOnly: '7',
-  DepositInquiry: '9',
-  RevisionInquiry: 'I',
-  NegativeResponse: 'N'
-});
-
-var MonetaryTxnCodes = Object.freeze([TxnCode.Sale, TxnCode.Return, TxnCode.TicketOnly,
-  TxnCode.AuthOnly, TxnCode.VoidSale, TxnCode.VoidReturn, TxnCode.VoidTicketOnly]);
-
-var VoidTxnCodes = Object.freeze([TxnCode.VoidSale, TxnCode.VoidReturn, TxnCode.VoidTicketOnly]);
-
-var ActionCode = Object.freeze({
-  RegularResponse: '0',
-  HostSpecificPoll: '1',
-  RevisionInquiry: '2',
-  PartialApproval: '3'
-});
-
 var fdmsProcessTransaction = function (txn) {
   var rs = null;
-  if (txn.txn_code === TxnCode.DepositInquiry) {
+  if (txn.txn_code === ft.TxnCode.DepositInquiry) {
     rs = new FdmsBatchResponse();
     rs.set_positive();
     rs.set_revision(0);
@@ -115,7 +90,7 @@ var fdmsParseTransaction = function (data) {
 
   pos++;
 
-  if (MonetaryTxnCodes.indexOf(header.txn_code) >= 0) {
+  if (ft.MonetaryTxnCodes.indexOf(header.txn_code) >= 0) {
     var mt = null;
     if (header.wcc === '@' || mt.wcc === 'B') {
       mt = new FdmsKeyedMonetaryTransaction();
@@ -128,7 +103,7 @@ var fdmsParseTransaction = function (data) {
     mt.parse(data.split(pos));
     return mt;
   }
-  else if (header.txn_code === TxnCode.DepositInquiry) {
+  else if (header.txn_code === ft.TxnCode.DepositInquiry) {
     return header;
   }
 
@@ -259,12 +234,39 @@ FdmsSwipedMonetaryTransaction.prototype.parse = function (data) {
 };
 
 var FdmsResponse = function() {
-  this.action_code = ActionCode.RegularResponse;
+  this.action_code = ft.ActionCode.RegularResponse;
   this.response_code = '0';
   this.batch_no = '0';
   this.item_no = '000';
   this.revision_no = '0';
 };
+FdmsResponse.prototype.response = function() {
+  var data = new Buffer(64);
+  var pos = 0;
+  data[pos] = constants.STX;
+  pos++;
+  pos += data.write(this.action_code, pos);
+  pos += data.write(this.response_code, pos);
+  pos += data.write(this.batch_no, pos);
+  pos += data.write(this.item_no, pos);
+  pos += data.write(this.revision_no, pos);
+  var body = this.body();
+  if (data.length < pos + body.length + 2) {
+    data.length = pos + body.length + 2;
+  }
+  body.copy(data, pos);
+  pos += body.length;
+  data[pos] = constants.ETX;
+  pos++;
+  var lrs = data[1];
+  for (var i = 2; i < pos; i++) {
+    lrs ^= data[i];
+  }
+  data[pos] = lrs;
+  pos++;
+  return data.slice(0, pos);
+};
+
 FdmsResponse.prototype.set_negative = function () {
   this.response_code = '1';
 };
@@ -300,6 +302,21 @@ var FdmsTextResponse = function () {
   this.response_text = '';
 };
 FdmsTextResponse.prototype = new FdmsResponse();
+FdmsTextResponse.prototype.text_response_body = function () {
+  var txt = this.response_text;
+  if (txt.length > 16) {
+    txt.substr(0, 16);
+  }
+  else if (txt.length < 16) {
+    txt = '                 ' + txt;
+    txt = txt.substr(txt.length - 16);
+  }
+  var data = new Buffer(17);
+  data[0] = constants.FS;
+  data.write(txt, 1, 16, 'ascii');
+  return data;
+};
+FdmsTextResponse.prototype.body = text_response_body;
 
 var FdmsBatchResponse = function () {
   this.batch_id_number = '';
