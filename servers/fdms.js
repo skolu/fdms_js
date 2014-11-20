@@ -2,7 +2,7 @@ var constants = require('./constants');
 var fdms = require('./fdms_txn');
 var ft = require('./fdms_types');
 var buffertools = require('buffertools');
-var EventEmitter = require('events').EventEmitter;
+var events = require('events');
 
 
 var FdmsSessionListener = function (stream) {
@@ -33,9 +33,9 @@ var FdmsSession = function (stream) {
   this.attempt = 0;
   this.write(constants.ENQ);
   this.state = SessionState.ReadRequest;
-  this.rq_timeout = setTimeout(function() {
+  this.timeout = setTimeout(function() {
     if (this.state === SessionState.ReadRequest) {
-      console.log("FDMS Read Timeout");
+      console.log("FDMS: Timeout");
       if (this.fdms_connection) {
         this.fdms_connection.destroy();
       }
@@ -44,6 +44,8 @@ var FdmsSession = function (stream) {
 };
 
 FdmsSession.prototype.onFdmsPacket = function(packet) {
+  console.log("FDMS: Received Packet");
+  console.log(packet);
   switch (this.state) {
     case SessionState.ReadRequest:
     switch (packet[0]) {
@@ -61,7 +63,7 @@ FdmsSession.prototype.onFdmsPacket = function(packet) {
         this.attempt = 0;
       }
       catch (err) {
-        console.log("FDMS Read Request Error: " + err);
+        console.log("FDMS Error: Parse Request " + err);
         this.attempt ++;
         if (this.attempt < 4) {
           this.write(constants.NAK);
@@ -70,21 +72,26 @@ FdmsSession.prototype.onFdmsPacket = function(packet) {
         }
       }
       break;
+
       case constants.EOT:
       this.state = SessionState.ProcessRequest;
+      if (this.timeout !== null) {
+        clearTimeout(this.timeout);
+        this.timeout = null;
+      }
       var rs = this.process();
       var data = rs.body();
       break;
+
       default:
-      console.log("FDMS Invalid Packet");
-      console.log(packet);
+      console.log("FDMS Error: Unexpected Packet");
       this.fdms_connection.destroy();
       break;
     }
     break;
 
     default:
-    console.log("FDMS Invalid State");
+    console.log("FDMS Error: Unexpected State");
     console.log(packet);
     this.fdms_connection.destroy();
     break;
@@ -100,14 +107,14 @@ FdmsSession.prototype.process = function () {
 };
 
 FdmsSession.prototype.parse = function (data) {
-  var lrs = packet[1];
-  for (var i = 2; i < packet.length - 2; i++) {
-    lrs ^= packet[i];
+  var lrs = data[1];
+  for (var i = 2; i < data.length - 1; i++) {
+    lrs ^= data[i];
   }
-  if (lrs !== packet[packet.length - 1]) {
-    throw ("Invalid LRS");
+  if (lrs !== data[data.length - 1]) {
+    throw ("FDMS Parse: Invalid LRS");
   }
-  var packet = data.split(1, data.length - 2);
+  var packet = data.slice(1, data.length - 2);
   return fdms.fdmsParseTransaction(packet);
 };
 
@@ -119,12 +126,16 @@ FdmsSession.prototype.write = function (data) {
   }
   var ok = this.fdms_connection.write(packet);
   if (!ok) {
-    console.log("FDMS Session: write overflow");
+    console.log("FDMS Session: Write Overflow");
     this.fdms_connection.destroy();
   }
 };
 
 FdmsSession.prototype.onFinish = function () {
+  if (this.timeout !== null) {
+    clearTimeout(this.timeout);
+    this.timeout = null;
+  }
   if (this.fdms_connection) {
     this.fdms_connection.removeAllListeners();
     this.fdms_connection.destroy();
@@ -134,17 +145,16 @@ FdmsSession.prototype.onFinish = function () {
     this.fdms_stream.removeAllListeners();
     this.fdms_stream = null;
   }
-  console.log("FDMS session is closed.");
+  console.log("FDMS Session: Closed.");
 };
 
 var FdmsStream = function() {
   this.buffer = null;
 };
-
-FdmsStream.prototype = new EventEmitter();
+FdmsStream.prototype = Object.create(events.EventEmitter.prototype);
 FdmsStream.prototype.append = function (chunk) {
   var data = null;
-  if (this.buffer != null) {
+  if (this.buffer !== null) {
     data = Buffer.concat([this.buffer, chunk]);
   } else {
     data = chunk;
@@ -161,7 +171,8 @@ FdmsStream.prototype.append = function (chunk) {
     switch (data[pos]) {
       case constants.STX:
       var end_pos = buffertools.indexOf(data, etx_sep, pos);
-      if (end_pos > pos && end_pos + etx_sep.length + 1 < data.length) {
+      if (end_pos > pos && end_pos + etx_sep.length + 1 <= data.length) {
+        end_pos += etx_sep.length + 1;
         packet = data.slice(pos, end_pos);
         pos = end_pos;
         this.emit('packet', packet);
@@ -178,7 +189,7 @@ FdmsStream.prototype.append = function (chunk) {
       this.emit('packet', packet);
       break;
       default:
-      console.log("FDMS stream: invalid character" + data[pos].toString());
+      console.log("FDMS Stream Warning: Invalid Character" + data[pos].toString());
       packet = data.slice(pos, pos + 1);
       pos++;
       this.emit('skip', packet);
@@ -186,8 +197,10 @@ FdmsStream.prototype.append = function (chunk) {
     }
   }
   if (pos < data.length) {
-    console.log("FDMS Stream: incomplete packet");
+    console.log("FDMS Stream Warning: Incomplete Packet");
     this.buffer = data.slice(pos);
+  } else {
+    this.buffer = null;
   }
 };
 

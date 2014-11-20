@@ -1,6 +1,6 @@
 var net = require('net');
 var fdms = require('./fdms');
-var EventEmitter = require("events").EventEmitter;
+var events = require("events");
 
 var SiteNetConfig = function (fdms_path) {
   this.fdms_path = fdms_path;
@@ -55,7 +55,7 @@ SiteNetSession.prototype.onFinish = function () {
 
 SiteNetSession.prototype.client_write = function(data) {
   if (this.site_net_connection) {
-    console.log("To Client");
+    console.log("SiteNET: Write Client");
     console.log(data);
 
     var ok = this.site_net_connection.write(data);
@@ -67,22 +67,33 @@ SiteNetSession.prototype.client_write = function(data) {
   }
 };
 
-SiteNetSession.prototype.onFdmsPacket = function () {
-  while (true) {
-    var data = this.fdms_stream.next();
-    if (!data) {
-      break;
-    }
+SiteNetSession.prototype.fdms_write = function(data) {
+  if (this.fdms_connection !== null) {
+    console.log("SiteNET: Write FDMS");
+    console.log(data);
 
-    var packet = new Buffer(data.length + 4);
-    packet.writeInt16BE(data.length, 0);
-    packet.write("22", 2, 2, "ascii");
-    data.copy(packet, 4);
-    this.client_write(packet);
+    var ok = this.fdms_connection.write(data);
+    if (!ok) {
+      this.fdms_connection.once('drain', function() {
+        this.fdms_connection.write(data);
+      }.bind(this));
+    }
   }
 };
 
+SiteNetSession.prototype.onFdmsPacket = function (data) {
+  console.log("SiteNET: Received FDMS");
+  console.log(data);
+  var packet = new Buffer(data.length + 4);
+  packet.writeInt16BE(data.length, 0);
+  packet.write("22", 2, 2, "ascii");
+  data.copy(packet, 4);
+  this.client_write(packet);
+};
+
 SiteNetSession.prototype.onSiteNetPacket = function (type, packet) {
+  console.log("SiteNET: Received Client");
+  console.log(packet);
   switch (type) {
     case "01":
     var fields = packet.toString().split(",");
@@ -100,8 +111,6 @@ SiteNetSession.prototype.onSiteNetPacket = function (type, packet) {
     connection.once('connect', function() {
       this.fdms_connection = connection;
       this.fdms_connection.on('data', function (chunk) {
-        console.log("From FDMS");
-        console.log(chunk);
         this.fdms_stream.append(chunk);
       }.bind(this));
       this.fdms_connection.once('finish', this.onFinish.bind(this));
@@ -116,14 +125,7 @@ SiteNetSession.prototype.onSiteNetPacket = function (type, packet) {
         packet[i] = b & 0x7f;
       }
     }
-    if (this.fdms_stream) {
-      var ok = this.fdms_connection.write(packet);
-      if (!ok) {
-        this.fdms_connection.once('drain', function () {
-          this.fdms_connection.write(packet);
-        });
-      }
-    }
+    this.fdms_write(packet);
     break;
   }
 };
@@ -131,8 +133,7 @@ SiteNetSession.prototype.onSiteNetPacket = function (type, packet) {
 var SiteNetStream = function() {
   this.buffer = null;
 };
-
-SiteNetStream.prototype = new EventEmitter();
+SiteNetStream.prototype = Object.create(events.EventEmitter.prototype);
 SiteNetStream.prototype.append = function (chunk) {
   var data = null;
   if (this.buffer !== null) {

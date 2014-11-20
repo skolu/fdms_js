@@ -290,7 +290,7 @@ FdmsResponse.prototype.set_batch_number = function (number) {
   }
   this.batch_no = str;
 };
-FdmsResponse.prototype.set_evision = function (number) {
+FdmsResponse.prototype.set_revision = function (number) {
   var str = number.toString;
   if (str.length != 1) {
     throw "Incorrect revision: " + number;
@@ -301,7 +301,7 @@ FdmsResponse.prototype.set_evision = function (number) {
 var FdmsTextResponse = function () {
   this.response_text = '';
 };
-FdmsTextResponse.prototype = new FdmsResponse();
+FdmsTextResponse.prototype = Object.create(FdmsResponse.prototype);
 FdmsTextResponse.prototype.text_response_body = function () {
   var txt = this.response_text;
   if (txt.length > 16) {
@@ -316,13 +316,13 @@ FdmsTextResponse.prototype.text_response_body = function () {
   data.write(txt, 1, 16, 'ascii');
   return data;
 };
-FdmsTextResponse.prototype.body = text_response_body;
+FdmsTextResponse.prototype.body = FdmsTextResponse.prototype.text_response_body;
 
 var FdmsBatchResponse = function () {
   this.batch_id_number = '';
   this.response_text2 = '';
 };
-FdmsBatchResponse.prototype = new FdmsTextResponse();
+FdmsBatchResponse.prototype = Object.create(FdmsTextResponse.prototype);
 FdmsBatchResponse.prototype.set_batch_id_number = function(number) {
   var str = number.toString;
   if (str.length < 6) {
@@ -339,7 +339,7 @@ var FdmsCreditResponse = function() {
   this.approved_amount = null;
   this.requested_amount = null;
 };
-FdmsCreditResponse.prototype = new FdmsTextResponse();
+FdmsCreditResponse.prototype = Object.create(FdmsTextResponse.prototype);
 
 module.exports.FdmsHeader = FdmsHeader;
 module.exports.fdmsParseTransaction = fdmsParseTransaction;

@@ -1,4 +1,4 @@
-module.exports.TxnCode = Object.freeze({
+var TxnCode = Object.freeze({
   Close: '0',
   Sale: '1',
   Return: '2',
@@ -33,3 +33,5 @@ module.exports.TransactionType = Object.freeze({
     SpecificPollRevised: '5',
     SpecificPollTransaction: '6'
 });
+
+module.exports.TxnCode = TxnCode;
