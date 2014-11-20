@@ -10,8 +10,7 @@ if (fs.existsSync(unix_pipe)) {
   fs.unlinkSync(unix_pipe);
 }
 
-var fdmsSession = new fdms.FdmsSession();
-var fdmsServer = net.createServer(fdmsSession.listener.bind(fdmsSession));
+var fdmsServer = net.createServer(fdms.FdmsSessionListener);
 fdmsServer.listen(unix_pipe);
 
 var options = {

@@ -1,66 +1,71 @@
 var constants = require('./constants');
 var buf = require('./buffer');
-var txn = require('./fdms_txn');
+var fdms = require('./fdms_txn');
 var EventEmitter = require('events').EventEmitter;
 
-var FdmsSession = function () {
-  this.fdms_connection = null;
-  this.fdms_stream = new FdmsStream();
-  this.attempt = 0;
+var FdmsSessionListener = function (stream) {
+  console.log("FDMS session started.");
+  new FdmsSession(stream);
 };
 
-FdmsSession.prototype.listener = function (stream) {
+var FdmsSession = function (stream) {
   this.fdms_connection = stream;
+  this.fdms_stream = new FdmsStream();
+  this.attempt = 0;
+
   stream.on('data', function (chunk) {
     this.fdms_stream.append(chunk);
   }.bind(this));
   stream.once('finish', this.onFinish.bind(this));
+  stream.once('close', this.onFinish.bind(this));
 
   this.attempt = 0;
-  this.write(constants.ENQ, this.read(this.read_request));
+  this.write(constants.ENQ, this.read_request.bind(this));
 };
 
-FdmsSession.prototype.read_request = function(packet) {
+FdmsSession.prototype.read_request = function() {
+  var packet = this.fdms_stream.next();
+  if (!packet) {
+    this.fdms_stream.once('available', this.read_request.bind(this));
+    return;
+  }
+
   if (this.attempt > 3) {
     this.fdms_connection.end();
     return;
   }
+
   var controlByte = packet[0];
   if (controlByte === constants.STX) {
     try {
       var txn = this.parse(packet);
       if (txn.header.txn_type === '0') {
-        this.write(constants.ACK, this.read(this.read_request));
+        this.write(constants.ACK, this.read_request.bind(this));
       }
       this.attempt = 0;
     }
     catch(err) {
       console.log(err);
       this.attempt ++;
-      this.write(constants.NAK, this.read(this.read_request));
+      this.write(constants.NAK, this.read_request.bind(this));
     }
   } else if (controlByte === constants.EOT) {
     this.process();
   } else {
     this.fdms_connection.end();
   }
-}
+};
 
 FdmsSession.prototype.parse = function (data) {
   var lrs = packet[1];
   for (var i = 2; i < packet.length - 2; i++) {
     lrs ^= packet[i];
   }
-  if (lrs !=== packet[packet.length - 1]) {
+  if (lrs !== packet[packet.length - 1]) {
     throw ("Invalid LRS");
   }
-  var header = new FdmsHeader();
-  var pos = 0
-
-  if (data[pos] === constants.STX)
-    pos += 1
-
-
+  var packet = data.split(1, data.length - 2);
+  var txn = fdms.fdmsParseTransaction(packet);
 };
 
 FdmsSession.prototype.write = function (data, func) {
@@ -81,21 +86,16 @@ FdmsSession.prototype.write = function (data, func) {
   this.fdms_connection.once('drain', callback);
 };
 
-FdmsSession.prototype.read = function (func) {
-  var packet = this.fdms_stream.next();
-  if (packet) {
-    funcData(packet);
-  } else {
-    var callback = function () {
-      funcData(packet);
-    }.bind(this);
-    this.fdms_stream.once('available', callback);
-  }
-};
-
 FdmsSession.prototype.onFinish = function () {
-  this.fdms_connection.removeAllListeners();
-  this.fdms_stream.removeAllListeners();
+  if (this.fdms_connection) {
+    this.fdms_connection.removeAllListeners();
+    this.fdms_connection.destroy();
+    this.fdms_connection = null;
+  }
+  if (this.fdms_stream) {
+    this.fdms_stream.removeAllListeners();
+    this.fdms_stream = null;
+  }
   console.log("FDMS session is closed.");
 };
 
@@ -106,11 +106,13 @@ var FdmsStream = function() {
 
 FdmsStream.prototype = new EventEmitter();
 FdmsStream.prototype.append = function (chunk) {
+  console.log("FDMS: received " + chunk.length);
   this.buffer.append(chunk);
   if (!this.next_packet) {
     this.shift();
   }
   if (this.next_packet) {
+    console.log("FDMS: avalable");
     this.emit('available');
   }
 };
@@ -154,9 +156,17 @@ FdmsStream.prototype.shift = function () {
 
 FdmsStream.prototype.next = function () {
   var p = this.next_packet;
-  this.shift();
+  if (!p) {
+    this.shift();
+    p = this.next_packet;
+  }
+  if (p) {
+    this.next_packet = null;
+    this.shift();
+  }
   return p;
 };
 
 module.exports.FdmsSession = FdmsSession;
 module.exports.FdmsStream = FdmsStream;
+module.exports.FdmsSessionListener = FdmsSessionListener;

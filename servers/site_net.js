@@ -5,9 +5,10 @@ var EventEmitter = require("events").EventEmitter;
 
 var SiteNetConfig = function (fdms_path) {
   this.fdms_path = fdms_path;
-}
+};
 
 SiteNetConfig.prototype.listener = function (stream) {
+  console.log("SiteNET session started.");
   new SiteNetSession(this.fdms_path, stream);
 };
 
@@ -28,33 +29,57 @@ var SiteNetSession = function (fdms_path, stream) {
   }.bind(this));
 
   stream.once('finish', this.onFinish.bind(this));
+  stream.once('close', this.onFinish.bind(this));
 };
 
 SiteNetSession.prototype.onFinish = function () {
-  this.site_net_stream.removeAllListeners();
-  this.fdms_stream.removeAllListeners();
-  this.site_net_connection.removeAllListeners();
-  this.site_net_connection = null;
+  if (this.site_net_connection) {
+    this.site_net_connection.removeAllListeners();
+    this.site_net_connection.destroy();
+    this.site_net_connection = null;
+  }
   if (this.fdms_connection) {
     this.fdms_connection.removeAllListeners();
+    this.fdms_connection.destroy();
     this.fdms_connection = null;
   }
-  console.log("Site Net session is closed.");
+  if (this.site_net_stream) {
+    this.site_net_stream.removeAllListeners();
+    this.site_net_stream = null;
+  }
+  if (this.fdms_stream) {
+    this.fdms_stream.removeAllListeners();
+    this.fdms_stream = null;
+  }
+  console.log("SiteNET session closed.");
 };
 
-SiteNetSession.prototype.onFdmsPacket = function (data) {
-  var packet = new Buffer(data.length + 4);
-  packet.writeInt16BE(data.length, 0);
-  packet.write("22", 2, 2, "ascii");
-  data.copy(packet, 4);
-
+SiteNetSession.prototype.client_write = function(data) {
   if (this.site_net_connection) {
-    var ok = this.site_net_connection.write(packet);
+    console.log("To Client");
+    console.log(data);
+
+    var ok = this.site_net_connection.write(data);
     if (!ok) {
       this.site_net_connection.once('drain', function() {
-        this.site_net_connection.write(packet);
-      });
+        this.site_net_connection.write(data);
+      }.bind(this));
     }
+  }
+};
+
+SiteNetSession.prototype.onFdmsPacket = function () {
+  while (true) {
+    var data = this.fdms_stream.next();
+    if (!data) {
+      break;
+    }
+
+    var packet = new Buffer(data.length + 4);
+    packet.writeInt16BE(data.length, 0);
+    packet.write("22", 2, 2, "ascii");
+    data.copy(packet, 4);
+    this.client_write(packet);
   }
 };
 
@@ -72,13 +97,16 @@ SiteNetSession.prototype.onSiteNetPacket = function (type, packet) {
         this.info_record.version_id = fields[4];
       }
     }
-    var connection = net.connect({path: this.fdms_path}, function () {
+    var connection = net.connect({path: this.fdms_path});
+    connection.once('connect', function() {
       this.fdms_connection = connection;
       this.fdms_connection.on('data', function (chunk) {
+        console.log("From FDMS");
+        console.log(chunk);
         this.fdms_stream.append(chunk);
       }.bind(this));
       this.fdms_connection.once('finish', this.onFinish.bind(this));
-
+      this.fdms_connection.once('close', this.onFinish.bind(this));
     }.bind(this));
     break;
 
